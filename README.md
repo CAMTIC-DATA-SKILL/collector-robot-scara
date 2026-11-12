@@ -37,6 +37,20 @@ python main.py
 
 `.env`의 `SOCKET_HOST`, `SOCKET_PORT`, `REMOTE_PASSWORD`를 현장에 맞춘다. 포트 기본값은 5000이다. `Main.prg`의 5002, 5003과는 다른 포트다.
 
+### 서비스 등록 (Linux)
+
+`.venv` 와 `.env` 를 만든 뒤, 프로젝트 루트에서 등록합니다. 유닛은 현재 경로를 기준으로 생성됩니다 (`systemd/*.service` 는 `/opt` 고정 설치 예시).
+
+```bash
+sudo bash service_add.sh
+journalctl -u collector-robot-scara -f
+```
+
+- `/etc/systemd/system` 에 시스템 유닛을 등록하고 `multi-user.target` 으로 부팅 시 자동 기동합니다.
+- 실행 계정은 프로젝트 디렉터리 소유자입니다.
+- 중지하면 `$Logout` 을 확인한 뒤 소켓을 닫습니다.
+- 제거: `sudo systemctl disable --now collector-robot-scara && sudo rm /etc/systemd/system/collector-robot-scara.service && sudo systemctl daemon-reload`
+
 ```bash
 python script/smoke_socket.py
 python -m core.zeromq_client --device-key scara-rc90

@@ -1,0 +1,27 @@
+# /opt 고정 설치 예시. 현재 체크아웃 경로로 등록하려면 service_add.sh 를 사용한다.
+[Unit]
+Description=SCARA RC90 collector (Remote Ethernet -> ZeroMQ PUB)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=collector
+Group=collector
+
+WorkingDirectory=/opt/collector-robot-scara
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/opt/collector-robot-scara/.env
+ExecStart=/opt/collector-robot-scara/.venv/bin/python /opt/collector-robot-scara/main.py
+
+Restart=on-failure
+RestartSec=5
+# SIGTERM 뒤 $Logout 응답을 기다린다. SOCKET_TIMEOUT_SEC 두 번보다 길어야 한다.
+TimeoutStopSec=30
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=collector-robot-scara
+
+[Install]
+WantedBy=multi-user.target
