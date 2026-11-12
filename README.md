@@ -42,7 +42,7 @@ python script/smoke_socket.py
 python -m core.zeromq_client --device-key scara-rc90
 ```
 
-스모크는 로컬 소켓으로 로그인, 상태 비트, Execute 두 번, 거절 후 세션 유지, 종료 시 `$Logout`, `error=1`이면 `$Reset` 없이 대기를 본다. 마지막 줄이 `== PASS n/n ==` 이면 성공이다.
+스모크는 로컬 소켓으로 로그인, 상태 비트, 값마다 `Print`, 따옴표 안의 줄바꿈, 거절 후 세션 유지, 종료 시 `$Logout`, `error=1`이면 `$Reset` 없이 대기를 본다. 마지막 줄이 `== PASS n/n ==` 이면 성공이다.
 
 ## 한 주기
 
@@ -62,7 +62,7 @@ python -m core.zeromq_client --device-key scara-rc90
 
 ## 기본 칸
 
-`socket_map.json`은 명령을 두 개로 나눈다. Remote Ethernet의 Execute 문자열 한 줄은 256바이트까지고, 인자 전체는 큰따옴표로 감싸므로 명령 안에 `"`를 넣을 수 없다. 쉼표는 `Chr$(44)`다.
+`socket_map.json`은 값마다 `Print`를 한 번씩 보낸다. `Print` 결과에는 줄바꿈이 들어 있고, 원격 응답은 `#Execute," 176.685\r\n"\r\n`처럼 따옴표 안에 CRLF가 있다. 명령 문자열에는 `$`를 넣지 않는다. `Chr$(44)`는 원격 명령의 `$`와 겹쳐 `!Execute,99`가 된다.
 
 | index | 이름 | SPEL |
 | --- | --- | --- |

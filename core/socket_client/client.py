@@ -145,7 +145,7 @@ class RemoteClient:
         payload = execute_payload(reply.rest)
         if payload is None:
             raise SocketClientError(SocketErrorCode.NOT_ACCEPTED, "Execute 가 값 없이 끝났다")
-        return payload
+        return payload.strip()
 
     def request(self, line: str) -> RemoteReply:
         if line.startswith("$Login"):
@@ -153,9 +153,18 @@ class RemoteClient:
         else:
             logger.debug(">> %s", line)
         self._send(line)
-        raw = self._read_line()
+        raw = self._read_reply()
         logger.debug("<< %s", raw)
         return parse_response(raw)
+
+    def _read_reply(self) -> str:
+        """Print 결과는 따옴표 안에 CRLF 를 포함한다. 따옴표가 닫힐 때까지 줄을 잇는다."""
+        parts: list[str] = []
+        while True:
+            parts.append(self._read_line())
+            text = "\n".join(parts)
+            if text.count('"') % 2 == 0:
+                return text
 
     def _raise_unless(self, reply: RemoteReply, name: str, *, reconnect: bool) -> None:
         if reply.command.lower() != name.lower():

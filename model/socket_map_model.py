@@ -101,8 +101,8 @@ class SocketMapSettings(BaseModel):
         for index, command in enumerate(self.executes, start=1):
             if not command or not command.strip():
                 raise ValueError(f"executes[{index}] 가 비어 있다")
-            if any(ch in command for ch in "\"\r\n"):
-                raise ValueError(f"executes[{index}] 에 큰따옴표나 줄바꿈을 넣을 수 없다")
+            if any(ch in command for ch in "\"\r\n$"):
+                raise ValueError(f"executes[{index}] 에 큰따옴표, 줄바꿈, $ 를 넣을 수 없다")
             size = len(command.encode(self.encoding))
             if size > _EXECUTE_LIMIT:
                 raise ValueError(

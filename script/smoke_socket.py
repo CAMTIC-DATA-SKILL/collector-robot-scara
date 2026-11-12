@@ -40,6 +40,7 @@ def main() -> int:
             runner.check("error 1504 waits without reset", lambda: _error_waits(robot))
             runner.check("shutdown logouts without reset", lambda: _shutdown(robot))
             runner.check("missing column is a point error", _missing_column)
+            runner.check("print newline stays inside the quotes", lambda: _embedded_newline(robot))
         finally:
             robot.close()
         runner.check("overlong line reconnects", _overlong)
@@ -51,14 +52,14 @@ def main() -> int:
 
 def _load_map() -> str:
     socket_map = SocketMap.from_json(ROOT / "socket_map.json")
-    expect(len(socket_map.settings.executes), 2)
+    expect(len(socket_map.settings.executes), 14)
     expect(len(socket_map.settings.points), 15)
     expect(socket_map.settings.points[1].name, "j1_position")
     expect(socket_map.settings.points[1].index, 0)
     expect(socket_map.settings.points[-1].name, "power_mode")
     for command in socket_map.settings.executes:
         expect(len(command.encode()) <= 256, True)
-        expect('"' in command, False)
+        expect('"' in command or "$" in command, False)
     return f"{len(socket_map.settings.executes)} commands, {len(socket_map.settings.points)} points"
 
 
@@ -138,7 +139,7 @@ def _session(robot: "FakeController") -> str:
         expect(samples["motor_state"].value, -1.0)
         expect(samples["power_mode"].value, 1.0)
         expect(samples["line"].error, None)
-        expect(robot.execute_count, 2)
+        expect(robot.execute_count, 14)
         return str(samples["j1_position"].value)
     finally:
         client.close()
@@ -173,7 +174,7 @@ def _wait_ready(robot: "FakeController") -> str:
         status, payload = client.poll(socket_map.settings.executes, ",")
         expect(status.accepts_execute, True)
         expect(payload, f"{JOINTS},{CARTESIAN}")
-        expect(robot.execute_count, 2)
+        expect(robot.execute_count, 14)
         return status.flags
     finally:
         client.close()
@@ -288,6 +289,21 @@ def _close_and_capture(client: RemoteClient) -> str:
     return "\n".join(buffer)
 
 
+def _embedded_newline(robot: "FakeController") -> str:
+    robot.reset()
+    robot.embed_newline = True
+    client = _client(robot)
+    try:
+        client.connect()
+        client.login(robot.password)
+        value = client.execute("Print Agl(1)")
+        expect(value, "176.685")
+        return value
+    finally:
+        client.close()
+        robot.embed_newline = False
+
+
 def _missing_column() -> str:
     socket_map = SocketMap.from_json(ROOT / "socket_map.json")
     samples = {sample.name: sample for sample in socket_map.parse("1.5")}
@@ -362,6 +378,7 @@ class FakeController:
         self.password = "secret"
         self._status = READY
         self._fail_execute = False
+        self.embed_newline = False
         self.login_count = 0
         self.execute_count = 0
         self._commands: list[str] = []
@@ -391,6 +408,7 @@ class FakeController:
         with self._lock:
             self._status = status
             self._fail_execute = fail_execute
+            self.embed_newline = False
             self.login_count = 0
             self.execute_count = 0
             self._commands.clear()
@@ -451,12 +469,35 @@ class FakeController:
                 if self._fail_execute:
                     return "!Execute,20", True
                 command = line[len('$Execute,"') : -1]
-                if "Agl(1)" in command:
-                    return f'#Execute,"{JOINTS}"', True
-                if "CX(CurPos)" in command:
-                    return f'#Execute,"{CARTESIAN}"', True
-                return "#Execute,0", True
+                if self.embed_newline and command == "Print Agl(1)":
+                    return '#Execute," 176.685\r\n"', True
+                value = _execute_value(command)
+                if value is None:
+                    return "#Execute,0", True
+                return f'#Execute,"{value}"', True
             return "!Execute,12", logged
+
+
+def _execute_value(command: str) -> str | None:
+    for key, value in (
+        ("RealTorque(4)", "0.4"),
+        ("RealTorque(3)", "0.3"),
+        ("RealTorque(2)", "0.2"),
+        ("RealTorque(1)", "0.1"),
+        ("Agl(4)", "4"),
+        ("Agl(3)", "3"),
+        ("Agl(2)", "-0.25"),
+        ("Agl(1)", "1.5"),
+        ("CX(CurPos)", "10"),
+        ("CY(CurPos)", "20"),
+        ("CZ(CurPos)", "30"),
+        ("CU(CurPos)", "40"),
+        ("Power", "1"),
+        ("Motor", "-1"),
+    ):
+        if key in command:
+            return value
+    return None
 
 
 if __name__ == "__main__":
