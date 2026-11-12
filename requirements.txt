@@ -1,0 +1,8 @@
+# model/ 스키마 검증
+pydantic>=2,<3
+
+# .env 로딩 (config.py)
+python-dotenv>=1.0
+
+# 게이트웨이 IPC (core/zeromq_client)
+pyzmq>=26

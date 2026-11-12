@@ -1,0 +1,27 @@
+{
+  "framing": "crlf",
+  "max_bytes": 8192,
+  "encoding": "utf-8",
+  "delimiter": ",",
+  "executes": [
+    "Print Agl(1);Chr$(44);Agl(2);Chr$(44);Agl(3);Chr$(44);Agl(4);Chr$(44);RealTorque(1);Chr$(44);RealTorque(2);Chr$(44);RealTorque(3);Chr$(44);RealTorque(4)",
+    "Print CX(CurPos);Chr$(44);CY(CurPos);Chr$(44);CZ(CurPos);Chr$(44);CU(CurPos);Chr$(44);Motor;Chr$(44);Power"
+  ],
+  "points": [
+    {"name": "line", "type": "str"},
+    {"name": "j1_position", "index": 0, "type": "f64"},
+    {"name": "j2_position", "index": 1, "type": "f64"},
+    {"name": "j3_position", "index": 2, "type": "f64"},
+    {"name": "j4_position", "index": 3, "type": "f64"},
+    {"name": "j1_torque", "index": 4, "type": "f64"},
+    {"name": "j2_torque", "index": 5, "type": "f64"},
+    {"name": "j3_torque", "index": 6, "type": "f64"},
+    {"name": "j4_torque", "index": 7, "type": "f64"},
+    {"name": "x", "index": 8, "type": "f64"},
+    {"name": "y", "index": 9, "type": "f64"},
+    {"name": "z", "index": 10, "type": "f64"},
+    {"name": "rz", "index": 11, "type": "f64"},
+    {"name": "motor_state", "index": 12, "type": "f64"},
+    {"name": "power_mode", "index": 13, "type": "f64"}
+  ]
+}
