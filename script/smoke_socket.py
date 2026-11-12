@@ -2,6 +2,7 @@
 
     python script/smoke_socket.py
 """
+import logging
 import socket
 import threading
 
@@ -17,6 +18,7 @@ JOINTS = "1.5,-0.25,3,4,0.1,0.2,0.3,0.4"
 CARTESIAN = "10,20,30,40,-1,1"
 READY = "#GetStatus,00100000001,0000"
 TASK_RUNNING = "#GetStatus,00100000000,0000"
+ERROR_1504 = "#GetStatus,00100001001,1504"
 
 
 def main() -> int:
@@ -35,6 +37,8 @@ def main() -> int:
             runner.check("not ready skips execute", lambda: _wait_ready(robot))
             runner.check("bad password then good password", lambda: _bad_password(robot))
             runner.check("rejected execute keeps the session", lambda: _rejected(robot))
+            runner.check("error 1504 waits without reset", lambda: _error_waits(robot))
+            runner.check("shutdown logouts without reset", lambda: _shutdown(robot))
             runner.check("missing column is a point error", _missing_column)
         finally:
             robot.close()
@@ -88,6 +92,12 @@ def _status_bits() -> str:
     short = parse_status("0100000001,0000")
     expect(short.valid, False)
     expect(short.accepts_execute, False)
+    held = parse_status("00100001001,1504")
+    expect(held.error, True)
+    expect(held.auto, True)
+    expect(held.ready, True)
+    expect(held.accepts_execute, False)
+    expect(held.code, "1504")
     return ready.reason
 
 
@@ -212,6 +222,72 @@ def _rejected(robot: "FakeController") -> str:
         client.close()
 
 
+def _error_waits(robot: "FakeController") -> str:
+    robot.reset(status=ERROR_1504)
+    client = _client(robot)
+    try:
+        client.connect()
+        client.login(robot.password)
+        status, payload = client.poll(["Print 1"], ",")
+        expect(payload, None)
+        expect(status.accepts_execute, False)
+        expect(status.error, True)
+        expect(status.code, "1504")
+        expect(robot.execute_count, 0)
+        expect(_reset_lines(robot), [])
+        client.close()
+        expect(robot.lines()[-1], "$Logout")
+        expect(_reset_lines(robot), [])
+        return status.reason
+    finally:
+        client.close()
+
+
+def _shutdown(robot: "FakeController") -> str:
+    robot.reset()
+    client = _client(robot)
+    client.connect()
+    client.login(robot.password)
+    text = _close_and_capture(client)
+    expect(client.logged_in, False)
+    expect(robot.lines(), [f"$Login,{robot.password}", "$Logout"])
+    expect(_reset_lines(robot), [])
+    expect("$Logout 확인, $Reset 없음" in text, True)
+    try:
+        client.get_status()
+    except SocketClientError as e:
+        expect(e.code, SocketErrorCode.CONNECT_FAILED)
+    else:
+        raise AssertionError("닫힌 소켓으로 GetStatus 가 나갔다")
+    client.close()
+    expect(robot.lines().count("$Logout"), 1)
+    return "logout"
+
+
+def _reset_lines(robot: "FakeController") -> list[str]:
+    return [line for line in robot.lines() if line.startswith("$Reset")]
+
+
+def _close_and_capture(client: RemoteClient) -> str:
+    log = logging.getLogger(client.__class__.__module__)
+    previous = log.level
+    buffer: list[str] = []
+
+    class _ListHandler(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            buffer.append(record.getMessage())
+
+    sink = _ListHandler(level=logging.INFO)
+    log.addHandler(sink)
+    log.setLevel(logging.INFO)
+    try:
+        client.close()
+    finally:
+        log.removeHandler(sink)
+        log.setLevel(previous)
+    return "\n".join(buffer)
+
+
 def _missing_column() -> str:
     socket_map = SocketMap.from_json(ROOT / "socket_map.json")
     samples = {sample.name: sample for sample in socket_map.parse("1.5")}
@@ -280,7 +356,7 @@ def _serve_once(handle) -> tuple[socket.socket, int]:
 
 
 class FakeController:
-    """$Login, $GetStatus, $Execute 만 응답하는 RC90 대역."""
+    """$Login, $Logout, $GetStatus, $Execute 에 응답하는 RC90 대역."""
 
     def __init__(self) -> None:
         self.password = "secret"
@@ -288,6 +364,7 @@ class FakeController:
         self._fail_execute = False
         self.login_count = 0
         self.execute_count = 0
+        self._commands: list[str] = []
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._server = socket.socket()
@@ -306,12 +383,17 @@ class FakeController:
         self._server.close()
         self._thread.join(1.0)
 
+    def lines(self) -> list[str]:
+        with self._lock:
+            return list(self._commands)
+
     def reset(self, *, status: str = READY, fail_execute: bool = False) -> None:
         with self._lock:
             self._status = status
             self._fail_execute = fail_execute
             self.login_count = 0
             self.execute_count = 0
+            self._commands.clear()
 
     def _serve(self) -> None:
         while not self._stop.is_set():
@@ -349,11 +431,16 @@ class FakeController:
 
     def _reply(self, line: str, logged: bool) -> tuple[str, bool]:
         with self._lock:
+            self._commands.append(line)
             if line.startswith("$Login,"):
                 self.login_count += 1
                 if line.split(",", 1)[1] != self.password:
                     return "!Login,13", False
                 return "#Login,0", True
+            if line == "$Logout":
+                if not logged:
+                    return "!Logout,11", False
+                return "#Logout,0", False
             if not logged:
                 name = line[1:].split(",", 1)[0] if line.startswith("$") else "Command"
                 return f"!{name},11", False

@@ -3,6 +3,7 @@
     python main.py
 
 수집 스레드는 연결 → 로그인 → $GetStatus → $Execute → data PUB 을 돈다.
+종료하면 $Logout 을 확인한 뒤 소켓을 닫는다. $Reset 은 보내지 않는다.
 메인 스레드는 게이트웨이 cmd 를 SUB 하고, 아직 처리하지 않는 cmd 에 ack 를 보낸다.
 """
 import logging
@@ -189,13 +190,21 @@ def main() -> None:
 
     zmq = ZeroMqClient(settings.zmq)
     zmq.connect()
-    worker = threading.Thread(target=collect, args=(stop, socket_map, zmq), name="collector", daemon=True)
+    # 프로세스가 먼저 죽으면 소켓만 닫혀 1504 가 남는다. $Logout 이 끝날 때까지 기다린다.
+    worker = threading.Thread(target=collect, args=(stop, socket_map, zmq), name="collector", daemon=False)
     worker.start()
     try:
         serve_commands(stop, zmq)
     finally:
         stop.set()
-        worker.join(timeout=settings.reconnect_interval + 2.0)
+        # 진행 중인 명령 한 번과 $Logout 응답. 둘 다 소켓 타임아웃으로 끝난다.
+        shutdown_wait = settings.socket.timeout * 2 + 2.0
+        worker.join(timeout=shutdown_wait)
+        if worker.is_alive():
+            logger.error(
+                "수집 스레드가 %.0f초 안에 끝나지 않았다. $Logout 이 컨트롤러에 닿지 않았을 수 있다",
+                shutdown_wait,
+            )
         zmq.close()
 
 

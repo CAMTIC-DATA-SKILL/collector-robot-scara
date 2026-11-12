@@ -42,7 +42,7 @@ python script/smoke_socket.py
 python -m core.zeromq_client --device-key scara-rc90
 ```
 
-스모크는 로컬 소켓으로 로그인, 상태 비트, Execute 두 번, 거절 후 세션 유지를 본다. 마지막 줄이 `== PASS n/n ==` 이면 성공이다.
+스모크는 로컬 소켓으로 로그인, 상태 비트, Execute 두 번, 거절 후 세션 유지, 종료 시 `$Logout`, `error=1`이면 `$Reset` 없이 대기를 본다. 마지막 줄이 `== PASS n/n ==` 이면 성공이다.
 
 ## 한 주기
 
@@ -52,7 +52,13 @@ python -m core.zeromq_client --device-key scara-rc90
 4. Execute를 받을 수 있으면 `socket_map.json`의 `executes`를 순서대로 보내고, `#Execute,"..."` 안의 문자열을 쉼표로 이어 붙인다.
 5. 칸을 샘플로 만들어 data를 발행한다.
 
-받을 수 없으면 data를 만들지 않고 health만 남긴 뒤 다음 주기에 상태부터 다시 본다. 로그인 실패나 끊김은 소켓을 닫고 `RECONNECT_INTERVAL_SEC` 뒤에 다시 붙는다.
+받을 수 없으면 data를 만들지 않고 health만 남긴 뒤 다음 주기에 상태부터 다시 본다. `error=1`도 같다. Execute를 보내지 않고, 에러를 지우지 않은 채 다음 주기에 상태를 다시 본다. 로그인 실패나 끊김은, 로그인되어 있으면 `$Logout`을 확인한 뒤 소켓을 닫고 `RECONNECT_INTERVAL_SEC` 뒤에 다시 붙는다.
+
+## 종료
+
+컬렉터를 끄면 로그인된 세션에 `$Logout`을 보내고 `#Logout,0`을 확인한 다음 소켓을 닫는다. 로그에 `Remote Ethernet 세션을 닫음: $Logout 확인, $Reset 없음`이 남는다. 소켓만 닫으면 컨트롤러에 1504(Remote Ethernet 통신 끊김)가 남는다.
+
+세션을 열 때 `$Reset`은 보내지 않는다. `$Reset`은 통신 에러만 지우는 명령이 아니라 컨트롤러 전체 리셋이다. 걸린 에러와 비상정지를 풀고, 로봇 파라미터를 초기화하며, 일반 출력도 끈다. 서보 이상이나 안전 회로 에러가 있어도 컬렉터가 지우지 않는다. 1504가 지난 테스트에 남아 있으면 RC+나 사람이 한 번 `$Reset`해서 지운다.
 
 ## 기본 칸
 

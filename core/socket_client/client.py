@@ -2,6 +2,7 @@
 
 접속은 유지하고, 로그인 한 번 뒤에 $GetStatus 와 $Execute 를 주고받는다.
 컨트롤러가 값을 밀어 주지 않으므로 한 주기에 명령을 다시 쓴다.
+세션을 열 때 $Reset 은 보내지 않는다. 닫을 때는 $Logout 을 확인한 뒤 소켓을 닫는다.
 """
 import logging
 import socket
@@ -64,6 +65,37 @@ class RemoteClient:
         )
 
     def close(self) -> None:
+        """로그인된 세션이면 $Logout 응답을 확인한 뒤에 소켓을 닫는다.
+
+        소켓만 닫으면 컨트롤러에 1504 가 남는다. $Reset 은 보내지 않는다.
+        $Reset 은 통신 에러만 지우는 명령이 아니라 컨트롤러 전체 리셋이라,
+        걸린 에러와 비상정지를 풀고 파라미터를 초기화하며 일반 출력도 끈다.
+        """
+        confirmed = False
+        try:
+            confirmed = self._logout()
+        finally:
+            self._drop_socket()
+        if confirmed:
+            logger.info("Remote Ethernet 세션을 닫음: $Logout 확인, $Reset 없음")
+
+    def _logout(self) -> bool:
+        if self._sock is None or not self._logged_in:
+            return False
+        try:
+            reply = self.request("$Logout")
+        except SocketClientError as e:
+            logger.warning("Remote Ethernet 세션을 닫음: $Logout 미확인, 1504 가 남을 수 있다: %s", e)
+            return False
+        finally:
+            self._logged_in = False
+        if reply.command.lower() != "logout" or not reply.ok or reply.rest not in {"0", ""}:
+            detail = reply.rest if reply.ok else f"!{reply.command},{reply.rest}"
+            logger.warning("Remote Ethernet 세션을 닫음: $Logout 미확인, 1504 가 남을 수 있다: %s", detail)
+            return False
+        return True
+
+    def _drop_socket(self) -> None:
         sock, self._sock = self._sock, None
         self._pending = b""
         self._logged_in = False
@@ -75,6 +107,7 @@ class RemoteClient:
             logger.debug("socket close failed: %s", e)
 
     def login(self, password: str) -> None:
+        """$Login 만 보낸다. 남은 에러는 $Reset 으로 지우지 않는다."""
         if self._logged_in:
             return
         reply = self.request(f"$Login,{password}")
